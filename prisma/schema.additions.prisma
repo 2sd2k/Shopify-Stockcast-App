@@ -1,0 +1,54 @@
+// Restock Radar — append these models to the prisma/schema.prisma that the
+// Shopify CLI template generates (keep its existing `Session` model and
+// datasource/generator blocks untouched), then run:
+//
+//   npx prisma migrate dev --name restock_radar
+//
+// SQLite is fine for the MVP. Nothing here uses a Postgres-only feature, so
+// swapping the datasource later is a one-line change.
+
+model ShopConfig {
+  shop              String    @id
+  primaryLocationId String?
+  primaryLocationName String?
+  // Lookback window for velocity. Must stay <= 60 without `read_all_orders`.
+  windowDays        Int       @default(30)
+  reorderCycleDays  Int       @default(14)
+  onboardedAt       DateTime?
+  lastSyncAt        DateTime?
+  lastSyncError     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+/// Per-SKU merchant overrides. A null column means "use the computed default",
+/// which is why these are nullable rather than pre-filled at sync time.
+model ProductSetting {
+  id                Int      @id @default(autoincrement())
+  shop              String
+  sku               String
+  leadTimeDays      Int?
+  safetyBufferUnits Int?
+  updatedAt         DateTime @updatedAt
+
+  @@unique([shop, sku])
+  @@index([shop])
+}
+
+/// Output of the daily sync. The UI reads only from here so page loads never
+/// hit the Admin API.
+model CachedVelocity {
+  id               Int      @id @default(autoincrement())
+  shop             String
+  sku              String
+  variantId        String?
+  productTitle     String
+  variantTitle     String?
+  unitsSold        Int
+  windowDays       Int
+  currentInventory Int
+  syncedAt         DateTime @default(now())
+
+  @@unique([shop, sku])
+  @@index([shop])
+}
