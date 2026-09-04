@@ -15,6 +15,12 @@ Result: PASS
 - ESLint: no errors
 - Build check: passed (`tsc --noEmit -p tsconfig.build.json`)
 
+## GitHub Actions
+
+- Initial CI run: [passed](https://github.com/2sd2k/Shopify-Restock-Radar-App/actions/runs/33923772009)
+- Job duration: 17 seconds
+- Checks passed: install, tests, TypeScript, ESLint, and build
+
 ## Manual Shopify workflow status
 
 The following steps require a live Shopify Partner session + development store
