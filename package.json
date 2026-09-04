@@ -1,0 +1,19 @@
+{
+  "name": "shopify-restock-radar-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types app/lib/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint \"app/lib/**/*.ts\"",
+    "build": "tsc --noEmit -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^22.18.1",
+    "eslint": "^9.35.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.43.0"
+  }
+}
