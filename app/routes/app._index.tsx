@@ -163,28 +163,33 @@ export default function Stockcast() {
           disabled={changingLocation}
           {...(syncing ? { loading: true } : {})}
         >
-          {syncing ? "Syncing" : "Sync now"}
+          {syncing ? "Updating" : "Update from Shopify"}
         </s-button>
-        {changingLocation && <span>Changing location and syncing…</span>}
+        {changingLocation && <span>Switching location and updating…</span>}
       </div>
       {!data.onboardedAt && (
         <Onboarding windowDays={rows[0]?.windowDays ?? DEFAULT_WINDOW_DAYS} />
       )}
       {locationError && (
-        <s-banner tone="critical" heading="Could not change location">
+        <s-banner tone="critical" heading="We couldn't switch locations">
           <p>{locationError}</p>
         </s-banner>
       )}
       {data.lastSyncError && (
-        <s-banner tone="critical" heading="Last sync failed">
-          <p role="alert">{data.lastSyncError}</p>
+        <s-banner tone="critical" heading="We couldn't update your numbers">
+          <p role="alert">
+            {data.lastSyncError}
+            {data.lastSyncAt
+              ? ` The table below still shows your last successful update from ${new Date(data.lastSyncAt).toLocaleString()}.`
+              : ""}
+          </p>
         </s-banner>
       )}
       <s-section
         heading={
           data.locationName
-            ? `${data.locationName} · ${data.totalTrackedSkus} tracked SKUs`
-            : "Reorder recommendations"
+            ? `What to reorder · ${data.totalTrackedSkus} items tracked at ${data.locationName}`
+            : "What to reorder"
         }
       >
         {syncing && neverSynced ? (
@@ -199,8 +204,8 @@ export default function Stockcast() {
         )}
         <p style={{ color: "#616161", fontSize: 13, marginTop: 20 }}>
           {data.lastSyncAt
-            ? `Last synced ${new Date(data.lastSyncAt).toLocaleString()}`
-            : "Not synced yet"}
+            ? `Last updated from Shopify ${new Date(data.lastSyncAt).toLocaleString()}`
+            : "Not updated yet"}
         </p>
       </s-section>
     </s-page>
@@ -216,10 +221,16 @@ function Onboarding({ windowDays }: { windowDays: number }) {
   return (
     <s-section heading="How these numbers work">
       <p>
-        We average your last {windowDays} days of sales per SKU, then flag
-        anything whose stock won&apos;t cover its lead time plus a safety
-        buffer. Adjust lead time or buffer on any row and the suggestion
-        updates.
+        We look at the last {windowDays} days of sales for each item and work
+        out how many it sells per day. Then we flag anything that will run out
+        before a new order could arrive.
+      </p>
+      <p>
+        <strong>Lead time</strong> is how many days your supplier takes to
+        deliver. <strong>Safety buffer</strong> is a few extra units kept in
+        reserve in case sales spike or a delivery is late; we suggest 20% of a
+        week&apos;s sales. Change either number on any row and the suggested
+        order updates.
       </p>
       <s-button
         onClick={() =>
@@ -237,8 +248,8 @@ function EmptyState() {
     <div style={{ padding: "28px 0", textAlign: "center" }}>
       <h2 style={{ marginBottom: 8 }}>Nothing needs reordering right now</h2>
       <p>
-        Every tracked SKU has enough stock to cover its lead time. We check
-        again every morning.
+        Every item you track has enough stock to last until a new order would
+        arrive. We check again every morning.
       </p>
     </div>
   );
@@ -252,16 +263,11 @@ function ReorderTable({ rows }: { rows: ReorderRow[] }) {
       >
         <thead>
           <tr>
-            {[
-              "Product",
-              "Stock",
-              "Days left",
-              "Reorder qty",
-              "Lead time (days)",
-              "Safety buffer",
-            ].map((heading) => (
-              <th key={heading} style={headerStyle}>
-                {heading}
+            {COLUMNS.map((column) => (
+              <th key={column.label} style={headerStyle} title={column.hint}>
+                {column.label}
+                <br />
+                <small style={hintStyle}>{column.hint}</small>
               </th>
             ))}
           </tr>
@@ -276,12 +282,13 @@ function ReorderTable({ rows }: { rows: ReorderRow[] }) {
                 </strong>
                 <br />
                 <small>
-                  {row.sku} · {row.avgDailySales}/day
+                  SKU {row.sku} · sells {row.avgDailySales} per day
                 </small>
               </td>
               <td style={numericCellStyle}>{row.currentInventory}</td>
               <td style={numericCellStyle}>
-                <UrgencyBadge
+                <StockBadge
+                  stock={row.currentInventory}
                   days={row.daysOfStockLeft}
                   lead={row.leadTimeDays}
                 />
@@ -313,12 +320,26 @@ function ReorderTable({ rows }: { rows: ReorderRow[] }) {
   );
 }
 
-/** Days of cover, coloured by how it compares to the lead time. */
-function UrgencyBadge({ days, lead }: { days: number; lead: number }) {
-  if (!Number.isFinite(days)) return <span>—</span>;
+/**
+ * How long the stock lasts, in words a merchant would use. Oversold and empty
+ * shelves get a label instead of a negative or zero number. Colour compares
+ * the cover to the lead time: red when a new order can't arrive in time.
+ */
+function StockBadge({
+  stock,
+  days,
+  lead,
+}: {
+  stock: number;
+  days: number;
+  lead: number;
+}) {
+  if (stock < 0) return <s-badge tone="critical">Oversold</s-badge>;
+  if (!Number.isFinite(days)) return <span>No recent sales</span>;
+  if (stock === 0) return <s-badge tone="critical">Out of stock</s-badge>;
   const tone =
     days <= lead / 2 ? "critical" : days <= lead ? "warning" : "info";
-  return <s-badge tone={tone}>{`${days}d`}</s-badge>;
+  return <s-badge tone={tone}>{`${days} days`}</s-badge>;
 }
 
 /** Inline-editable number. Saves on blur; blank resets to the default. */
@@ -347,7 +368,11 @@ function InlineNumber({
           ? `Lead time for ${sku}`
           : `Safety buffer for ${sku}`
       }
-      title={isDefault ? "Default value — type to override" : undefined}
+      title={
+        isDefault
+          ? "Suggested value. Type your own number to change it, or clear the box to go back to the suggestion."
+          : "Your value. Clear the box to go back to the suggestion."
+      }
       type="number"
       min="0"
       value={draft}
@@ -370,6 +395,19 @@ function InlineNumber({
   );
 }
 
+const COLUMNS = [
+  { label: "Product", hint: "Name, SKU, and sales per day" },
+  { label: "In stock", hint: "Units at this location now" },
+  { label: "Days of stock left", hint: "At the current sales rate" },
+  { label: "Suggested order", hint: "Units to buy now" },
+  { label: "Lead time (days)", hint: "Days from ordering to delivery" },
+  { label: "Safety buffer (units)", hint: "Extra units kept in reserve" },
+];
+const hintStyle = {
+  color: "#616161",
+  fontWeight: 400,
+  whiteSpace: "normal" as const,
+};
 const headerStyle = {
   borderBottom: "1px solid #d2d5d8",
   padding: "10px 8px",
