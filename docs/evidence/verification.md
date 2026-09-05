@@ -23,14 +23,22 @@ Result: PASS
 
 ## Manual Shopify workflow status
 
-The following steps require a live Shopify Partner session + development store
-and cannot be executed in this local, unauthenticated coding environment.
+Dev store: `restock-radar-3mropwwf.myshopify.com`, verified 2026-09-05 after the
+Stockcast rename and the React Router merge.
 
-- Install app on development store: pending manual run
-- Synchronize sales and inventory: pending manual run
-- Change inventory locations: pending manual run
-- Edit lead-time and safety-buffer values: pending manual run
-- Export CSV: pending manual run
+- Install app on development store: **PASS** (offline session present, four
+  read scopes auto-granted)
+- Synchronize sales and inventory: **PASS** (7 tracked SKUs cached; units sold
+  and stock per SKU match the Admin API exactly; `lastSyncError` null)
+- Recommendation matches the formula: **PASS** (four rows shown with suggested
+  quantities 68, 17, 11, 7; three healthy or zero-velocity SKUs hidden)
+- Change inventory locations: pending manual run (three locations listed;
+  switch not yet exercised)
+- Edit lead-time value: **PASS** (override of 8 days on `sku-managed-1`
+  survived a full resync)
+- Edit safety-buffer value: pending manual run
+- Export CSV: **PASS** (see `stockcast-restock-radar-3mropwwf-2026-09-05.csv`
+  in this folder; 11 headers, one row matching cached data)
 - Test uninstall and data deletion via `SHOP_REDACT`: pending manual run
 
 ## Suggested evidence artifacts to attach
