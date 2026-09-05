@@ -21,7 +21,7 @@ import {
   type ReorderRow,
   type SkuVelocityInput,
 } from "./reorder";
-import { toSyncErrorMessage } from "./sync-errors";
+import { toSyncErrorDetail, toSyncErrorMessage } from "./sync-errors";
 
 type AdminClient = Parameters<typeof fetchLocations>[0];
 type DbClient = typeof db;
@@ -138,8 +138,12 @@ export async function syncShop(
 
     return { ok: true as const, skuCount: rows.length };
   } catch (error) {
+    // Logs get the raw detail; the merchant gets a plain-language sentence.
+    merged.logError(
+      `[stockcast] sync failed for ${shop}:`,
+      toSyncErrorDetail(error),
+    );
     const message = toSyncErrorMessage(error);
-    merged.logError(`[stockcast] sync failed for ${shop}:`, message);
     await merged.dbClient.shopConfig.update({
       where: { shop },
       data: { lastSyncError: message },
