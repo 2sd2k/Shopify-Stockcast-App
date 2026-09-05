@@ -42,6 +42,10 @@ Stockcast rename and the React Router merge.
   survived a resync)
 - Export CSV: **PASS** (see `stockcast-restock-radar-3mropwwf-2026-09-05.csv`
   in this folder; 11 headers, one row matching cached data)
+- Scheduled sync failure and recovery: **PASS** (injected an invalid field into
+  the locations query; the failure was stored in `lastSyncError`, `lastSyncAt`
+  and all cached rows were untouched, and the next successful sync cleared the
+  error and rewrote the cache)
 - Test uninstall and data deletion via `SHOP_REDACT`: pending manual run
 
 ## Suggested evidence artifacts to attach
