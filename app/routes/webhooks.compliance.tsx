@@ -5,10 +5,10 @@
  * `authenticate.webhook` verifies the HMAC and throws a 401 if it fails, which
  * is exactly what the automated review check probes for.
  *
- * Register in shopify.app.toml — see restock-radar.toml.snippet.
+ * Register in shopify.app.toml — see shopify.app.toml.snippet.
  */
 
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import { clearShopData } from "../lib/sync.server";
 import { handleComplianceTopic } from "../lib/compliance";

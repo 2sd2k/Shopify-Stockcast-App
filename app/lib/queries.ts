@@ -4,19 +4,24 @@
  * All three have been validated against the Admin API schema.
  */
 
-export const PRIMARY_LOCATION_QUERY = /* GraphQL */ `
-  query PrimaryLocation {
+export const LOCATIONS_QUERY = /* GraphQL */ `
+  query Locations {
     shop {
       id
       name
       ianaTimezone
       currencyCode
     }
-    locations(first: 1, includeInactive: false, includeLegacy: true) {
+    primaryLocation: location {
+      id
+    }
+    locations(first: 100, includeInactive: false, includeLegacy: true) {
       nodes {
         id
         name
         isActive
+        isFulfillmentService
+        hasActiveInventory
       }
     }
   }

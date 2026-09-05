@@ -1,5 +1,5 @@
 /**
- * Restock Radar — reorder engine (Phase 2)
+ * Stockcast — reorder engine (Phase 2)
  *
  * Pure functions only. No Shopify calls, no DB access, no I/O.
  * Everything here is deterministic so it can be unit tested without a store.

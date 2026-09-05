@@ -1,6 +1,6 @@
-# Restock Radar
+# Stockcast
 
-Restock Radar is a focused Shopify embedded app for merchants who need a clear
+Stockcast is a focused Shopify embedded app for merchants who need a clear
 weekly reorder recommendation without paying for a full inventory suite.
 
 ## Business problem
@@ -11,16 +11,16 @@ failure modes:
 - Under-ordering fast movers, causing stockouts and missed revenue.
 - Over-ordering slow movers, tying up cash in dead inventory.
 
-Restock Radar solves a narrow decision: which SKUs should be reordered now, and
+Stockcast solves a narrow decision: which SKUs should be reordered now, and
 how many units should be purchased for the next cycle.
 
 ## Technology stack
 
-- Shopify Remix app template (embedded app shell)
+- Shopify React Router app template (embedded app shell)
 - TypeScript
-- Remix server routes + Shopify Admin GraphQL
+- React Router server routes + Shopify Admin GraphQL
 - Prisma-backed app database
-- Shopify Polaris for UI
+- Shopify Polaris web components for UI
 - `node-cron` for scheduled sync
 - Node `node:test` for tests
 - TypeScript (`tsc`) + ESLint for static checks
@@ -46,22 +46,25 @@ Defaults:
 
 ## Architecture
 
-1. `syncShop()` pulls orders and inventory from Shopify and writes cached
-   SKU-level velocity rows.
+1. `syncShop()` lists the shop's active inventory locations, picks one via
+   `selectInventoryLocation()` (honouring the merchant's saved choice), then
+   pulls orders and inventory and writes cached SKU-level velocity rows.
 2. `getReorderList()` joins cached velocity with per-SKU merchant overrides.
 3. `calculateReorder()` and `buildReorderList()` run pure reorder math.
-4. `app/routes/app._index.tsx` renders actionable rows and inline controls.
+4. `app/routes/app._index.tsx` renders the location picker, actionable rows,
+   and inline controls.
 5. `app/routes/webhooks.compliance.tsx` handles GDPR topics for App Store
    compliance.
 
 ## Setup instructions
 
-This repository is a feature overlay for a Shopify Remix app scaffold.
+This repository is a feature overlay for a Shopify React Router app scaffold.
+The runnable app is the scaffold with these files copied in.
 
-1. Scaffold the app:
+1. Scaffold the app and choose the React Router template:
 
 ```bash
-npm init @shopify/app@latest -- --template remix
+npm init @shopify/app@latest
 ```
 
 2. Copy this repository's files into the generated app.
@@ -76,7 +79,7 @@ shopify app deploy
 
 ```bash
 cat prisma/schema.additions.prisma >> prisma/schema.prisma
-npx prisma migrate dev --name restock_radar
+npx prisma migrate dev --name stockcast
 ```
 
 5. Install dependencies and run validation:
@@ -133,7 +136,8 @@ Markdown embed example:
 
 ## Limitations
 
-- Single-location strategy only (multi-location optimization is out of scope).
+- One location at a time: the merchant picks which inventory location to
+  plan against. Stock is never combined across locations.
 - Without `read_all_orders`, Shopify order history is limited to 60 days.
 - Refunds are subtracted from sold units via order refund line items; returns
   outside the lookback window can still require policy tuning.

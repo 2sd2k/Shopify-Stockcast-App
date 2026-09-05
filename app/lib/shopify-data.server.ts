@@ -1,5 +1,5 @@
 /**
- * Restock Radar — data layer (Phase 1)
+ * Stockcast — data layer (Phase 1)
  *
  * Thin wrappers over the Admin GraphQL API. These do paging and aggregation
  * only; no reorder math lives here (see app/lib/reorder.ts).
@@ -10,9 +10,10 @@
 
 import {
   INVENTORY_QUERY,
-  PRIMARY_LOCATION_QUERY,
+  LOCATIONS_QUERY,
   SALES_HISTORY_QUERY,
 } from "./queries.ts";
+import type { InventoryLocation, ShopLocations } from "./location-selection.ts";
 
 type AdminClient = {
   graphql: (
@@ -22,14 +23,6 @@ type AdminClient = {
 };
 
 const MAX_PAGES = 100; // hard stop so a runaway cursor can never loop forever
-
-export interface PrimaryLocation {
-  id: string;
-  name: string;
-  shopName: string;
-  timezone: string;
-  currencyCode: string;
-}
 
 export interface SkuSales {
   sku: string;
@@ -46,6 +39,50 @@ export interface SkuInventory {
   available: number;
 }
 
+type SalesHistoryPage = {
+  orders: {
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: Array<{
+      id: string;
+      lineItems: {
+        pageInfo: { hasNextPage: boolean };
+        nodes: Array<{
+          sku: string | null;
+          quantity: number;
+          name: string;
+          variant: { id: string } | null;
+        }>;
+      };
+      refunds?: Array<{
+        refundLineItems?: {
+          nodes: Array<{
+            quantity: number | null;
+            lineItem: { sku: string | null; variant: { id: string } | null } | null;
+          }>;
+        };
+      }>;
+    }>;
+  };
+};
+
+type InventoryPage = {
+  productVariants: {
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: Array<{
+      id: string;
+      sku: string | null;
+      title: string;
+      product: { title: string; status: string } | null;
+      inventoryItem: {
+        tracked: boolean;
+        inventoryLevel: {
+          quantities?: Array<{ name: string; quantity: number }>;
+        } | null;
+      } | null;
+    }>;
+  };
+};
+
 async function gql<T>(
   admin: AdminClient,
   query: string,
@@ -61,32 +98,26 @@ async function gql<T>(
 }
 
 /**
- * v1 is single-location by design. We take the first active location and treat
- * it as primary. Multi-location is explicitly out of scope.
+ * Every active inventory location, including app-managed (fulfillment
+ * service) ones. The merchant picks one; see selectInventoryLocation().
+ * Planning is always against a single location; stock is never combined.
  */
-export async function fetchPrimaryLocation(
-  admin: AdminClient,
-): Promise<PrimaryLocation> {
+export async function fetchLocations(admin: AdminClient): Promise<ShopLocations> {
   const data = await gql<{
-    shop: {
-      name: string;
-      ianaTimezone: string;
-      currencyCode: string;
-    };
-    locations: { nodes: Array<{ id: string; name: string; isActive: boolean }> };
-  }>(admin, PRIMARY_LOCATION_QUERY);
+    shop: { name: string };
+    primaryLocation: { id: string } | null;
+    locations: { nodes: InventoryLocation[] };
+  }>(admin, LOCATIONS_QUERY);
 
-  const location = data.locations.nodes[0];
-  if (!location) {
+  const locations = data.locations.nodes.filter((location) => location.isActive);
+  if (!locations.length) {
     throw new Error("This shop has no active inventory location.");
   }
 
   return {
-    id: location.id,
-    name: location.name,
     shopName: data.shop.name,
-    timezone: data.shop.ianaTimezone,
-    currencyCode: data.shop.currencyCode,
+    primaryLocationId: data.primaryLocation?.id ?? null,
+    locations,
   };
 }
 
@@ -111,7 +142,7 @@ export async function fetchSalesHistory(
   let pages = 0;
 
   do {
-    const data: any = await gql(admin, SALES_HISTORY_QUERY, {
+    const data: SalesHistoryPage = await gql<SalesHistoryPage>(admin, SALES_HISTORY_QUERY, {
       cursor,
       query: searchQuery,
     });
@@ -144,7 +175,7 @@ export async function fetchSalesHistory(
       }
       if (order.lineItems.pageInfo.hasNextPage) {
         console.warn(
-          `[restock-radar] order ${order.id} has >100 line items; tail ignored`,
+          `[stockcast] order ${order.id} has >100 line items; tail ignored`,
         );
       }
     }
@@ -165,7 +196,7 @@ export async function fetchSalesHistory(
   return totals;
 }
 
-/** Available units per SKU at the primary location. */
+/** Available units per SKU at the selected location. */
 export async function fetchCurrentInventory(
   admin: AdminClient,
   locationId: string,
@@ -175,7 +206,10 @@ export async function fetchCurrentInventory(
   let pages = 0;
 
   do {
-    const data: any = await gql(admin, INVENTORY_QUERY, { cursor, locationId });
+    const data: InventoryPage = await gql<InventoryPage>(admin, INVENTORY_QUERY, {
+      cursor,
+      locationId,
+    });
 
     for (const variant of data.productVariants.nodes) {
       const sku: string | null = variant.sku?.trim() || null;
@@ -185,7 +219,7 @@ export async function fetchCurrentInventory(
 
       const available =
         variant.inventoryItem.inventoryLevel?.quantities?.find(
-          (q: { name: string }) => q.name === "available",
+          (q) => q.name === "available",
         )?.quantity ?? 0;
 
       // Duplicate SKUs across variants: sum, since they draw from one shelf.

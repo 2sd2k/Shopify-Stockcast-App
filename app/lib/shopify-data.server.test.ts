@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   fetchCurrentInventory,
-  fetchPrimaryLocation,
+  fetchLocations,
   fetchSalesHistory,
 } from "./shopify-data.server.ts";
 
@@ -54,7 +54,7 @@ test("sales pagination aggregates quantities across pages", async () => {
     },
   ]);
 
-  const result = await fetchSalesHistory(admin as any, 30);
+  const result = await fetchSalesHistory(admin, 30);
   assert.equal(result.get("SKU-1")?.unitsSold, 5);
 });
 
@@ -92,7 +92,7 @@ test("refund line items reduce sold units and clamp at zero", async () => {
     },
   ]);
 
-  const result = await fetchSalesHistory(admin as any, 30);
+  const result = await fetchSalesHistory(admin, 30);
   assert.equal(result.get("SKU-1")?.unitsSold, 1);
   assert.equal(result.get("SKU-2")?.unitsSold, 0);
 });
@@ -152,30 +152,64 @@ test("inventory pagination filters untracked and archived variants", async () =>
     },
   ]);
 
-  const result = await fetchCurrentInventory(admin as any, "loc1");
+  const result = await fetchCurrentInventory(admin, "loc1");
   assert.deepEqual([...result.keys()], ["DUP"]);
   assert.equal(result.get("DUP")?.available, 10);
 });
 
-test("primary location returns first active location metadata", async () => {
+test("fetchLocations keeps active locations and reports the primary id", async () => {
   const admin = createAdmin([
     {
-      shop: {
-        name: "Demo Shop",
-        ianaTimezone: "America/Los_Angeles",
-        currencyCode: "USD",
-      },
+      shop: { name: "Demo Shop" },
+      primaryLocation: { id: "loc-merchant" },
       locations: {
         nodes: [
-          { id: "loc-app", name: "App-managed", isActive: true },
-          { id: "loc-merchant", name: "Retail Store", isActive: true },
+          {
+            id: "loc-app",
+            name: "App-managed",
+            isActive: true,
+            isFulfillmentService: true,
+            hasActiveInventory: true,
+          },
+          {
+            id: "loc-merchant",
+            name: "Retail Store",
+            isActive: true,
+            isFulfillmentService: false,
+            hasActiveInventory: true,
+          },
+          {
+            id: "loc-closed",
+            name: "Closed",
+            isActive: false,
+            isFulfillmentService: false,
+            hasActiveInventory: false,
+          },
         ],
       },
     },
   ]);
 
-  const location = await fetchPrimaryLocation(admin as any);
-  assert.equal(location.id, "loc-app");
-  assert.equal(location.name, "App-managed");
-  assert.equal(location.shopName, "Demo Shop");
+  const snapshot = await fetchLocations(admin);
+  assert.equal(snapshot.shopName, "Demo Shop");
+  assert.equal(snapshot.primaryLocationId, "loc-merchant");
+  assert.deepEqual(
+    snapshot.locations.map((location) => location.id),
+    ["loc-app", "loc-merchant"],
+  );
+});
+
+test("fetchLocations rejects a shop with no active location", async () => {
+  const admin = createAdmin([
+    {
+      shop: { name: "Demo Shop" },
+      primaryLocation: null,
+      locations: { nodes: [] },
+    },
+  ]);
+
+  await assert.rejects(
+    () => fetchLocations(admin),
+    /no active inventory location/,
+  );
 });

@@ -59,5 +59,5 @@ test("omits Infinity days-of-stock for spreadsheet compatibility", () => {
 
 test("builds deterministic filenames from shop domains", () => {
   const name = csvFilename("example-shop.myshopify.com");
-  assert.match(name, /^restock-radar-example-shop-\d{4}-\d{2}-\d{2}\.csv$/);
+  assert.match(name, /^stockcast-example-shop-\d{4}-\d{2}-\d{2}\.csv$/);
 });

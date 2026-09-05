@@ -1,45 +1,26 @@
 /**
- * Restock Radar — the entire app UI (Phase 3).
+ * Stockcast — the entire app UI (Phase 3).
  *
  * One view: what needs reordering, most urgent first. Resist adding tabs.
+ * Runs inside the React Router app shell and renders Polaris web components.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
-import {
-  Badge,
-  BlockStack,
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  InlineStack,
-  Layout,
-  Page,
-  Spinner,
-  Text,
-  TextField,
-  Tooltip,
-  IndexTable,
-  useIndexResourceState,
-} from "@shopify/polaris";
-
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { csvFilename, reorderListToCsv } from "../lib/csv";
+import { DEFAULT_WINDOW_DAYS, type ReorderRow } from "../lib/reorder";
 import {
   getReorderList,
   saveProductSetting,
   syncShop,
 } from "../lib/sync.server";
-import { csvFilename, reorderListToCsv } from "../lib/csv";
-import type { ReorderRow } from "../lib/reorder";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const data = await getReorderList(session.shop);
-  return json({ shop: session.shop, ...data });
+  return { shop: session.shop, ...(await getReorderList(session.shop)) };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -47,9 +28,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   const intent = String(form.get("intent"));
 
-  if (intent === "sync") {
-    const result = await syncShop(admin, session.shop);
-    return json(result);
+  if (intent === "sync") return syncShop(admin, session.shop);
+
+  if (intent === "location") {
+    const locationId = String(form.get("locationId") ?? "").trim();
+    if (!locationId) return { ok: false as const, error: "Choose a location" };
+    return syncShop(admin, session.shop, locationId);
   }
 
   if (intent === "dismissOnboarding") {
@@ -57,239 +41,284 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       where: { shop: session.shop },
       data: { onboardedAt: new Date() },
     });
-    return json({ ok: true });
+    return { ok: true as const };
   }
 
   if (intent === "setting") {
-    const sku = String(form.get("sku"));
+    const sku = String(form.get("sku") ?? "").trim();
     const field = String(form.get("field"));
     const raw = String(form.get("value") ?? "").trim();
     const value = raw === "" ? null : Number(raw);
-
-    if (value !== null && (!Number.isFinite(value) || value < 0)) {
-      return json({ ok: false, error: "Enter a positive number" }, { status: 400 });
-    }
-    if (field !== "leadTimeDays" && field !== "safetyBufferUnits") {
-      return json({ ok: false, error: "Unknown field" }, { status: 400 });
-    }
-
+    if (!sku || (field !== "leadTimeDays" && field !== "safetyBufferUnits"))
+      return { ok: false as const, error: "Invalid setting" };
+    if (value !== null && (!Number.isFinite(value) || value < 0))
+      return { ok: false as const, error: "Enter a non-negative number" };
     await saveProductSetting(session.shop, sku, {
       [field]: value === null ? null : Math.round(value),
     });
-    return json({ ok: true });
+    return { ok: true as const };
   }
 
-  return json({ ok: false, error: "Unknown intent" }, { status: 400 });
+  return { ok: false as const, error: "Unknown action" };
 };
 
-export default function Index() {
+export default function Stockcast() {
   const data = useLoaderData<typeof loader>();
-  const revalidator = useRevalidator();
   const syncFetcher = useFetcher<typeof action>();
-
-  const rows = data.rows as unknown as ReorderRow[];
-  const syncing = syncFetcher.state !== "idle";
+  const locationFetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
+  const rows = data.rows as ReorderRow[];
   const neverSynced = !data.lastSyncAt;
+  const syncing = syncFetcher.state !== "idle";
+  const changingLocation = locationFetcher.state !== "idle";
+  const locationError =
+    locationFetcher.state === "idle" && locationFetcher.data?.ok === false
+      ? locationFetcher.data.error
+      : null;
 
   // First load after install: kick off the initial sync automatically.
   useEffect(() => {
-    if (neverSynced && syncFetcher.state === "idle" && !syncFetcher.data) {
+    if (neverSynced && syncFetcher.state === "idle" && !syncFetcher.data)
       syncFetcher.submit({ intent: "sync" }, { method: "post" });
-    }
   }, [neverSynced, syncFetcher]);
-
   useEffect(() => {
-    if (syncFetcher.state === "idle" && syncFetcher.data) revalidator.revalidate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncFetcher.data, syncFetcher.state]);
+    if (syncFetcher.state === "idle" && syncFetcher.data)
+      revalidator.revalidate();
+  }, [revalidator, syncFetcher.data, syncFetcher.state]);
+  useEffect(() => {
+    if (locationFetcher.state === "idle" && locationFetcher.data)
+      revalidator.revalidate();
+  }, [locationFetcher.data, locationFetcher.state, revalidator]);
 
   const csv = useMemo(() => reorderListToCsv(rows), [rows]);
-
   const downloadCsv = () => {
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = csvFilename(data.shop);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = csvFilename(data.shop);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <Page
-      title="Restock Radar"
-      subtitle={
-        data.locationName
-          ? `${data.locationName} · ${data.totalTrackedSkus} tracked SKUs`
-          : undefined
-      }
-      primaryAction={{
-        content: "Export CSV",
-        onAction: downloadCsv,
-        disabled: rows.length === 0,
-      }}
-      secondaryActions={[
-        {
-          content: syncing ? "Syncing…" : "Sync now",
-          onAction: () => syncFetcher.submit({ intent: "sync" }, { method: "post" }),
-          loading: syncing,
-        },
-      ]}
-    >
-      <Layout>
-        {!data.onboardedAt && (
-          <Layout.Section>
-            <OnboardingBanner windowDays={rows[0]?.windowDays ?? 30} />
-          </Layout.Section>
+    <s-page heading="Stockcast">
+      <s-button
+        slot="primary-action"
+        onClick={downloadCsv}
+        disabled={rows.length === 0}
+      >
+        Export CSV
+      </s-button>
+      <div
+        style={{
+          alignItems: "end",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        {data.locations.length > 0 && (
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              Inventory location
+            </span>
+            <select
+              aria-label="Inventory location"
+              value={data.locationId ?? ""}
+              disabled={syncing || changingLocation}
+              onChange={(event) =>
+                locationFetcher.submit(
+                  {
+                    intent: "location",
+                    locationId: event.currentTarget.value,
+                  },
+                  { method: "post" },
+                )
+              }
+              style={{
+                minWidth: 240,
+                padding: "8px 32px 8px 10px",
+                border: "1px solid #8c9196",
+                borderRadius: 6,
+                background: "white",
+              }}
+            >
+              {data.locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                  {location.isFulfillmentService ? " (app-managed)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
-
-        {data.lastSyncError && (
-          <Layout.Section>
-            <Banner tone="critical" title="Last sync failed">
-              <p>{data.lastSyncError}</p>
-            </Banner>
-          </Layout.Section>
+        <s-button
+          onClick={() =>
+            syncFetcher.submit({ intent: "sync" }, { method: "post" })
+          }
+          disabled={changingLocation}
+          {...(syncing ? { loading: true } : {})}
+        >
+          {syncing ? "Syncing" : "Sync now"}
+        </s-button>
+        {changingLocation && <span>Changing location and syncing…</span>}
+      </div>
+      {!data.onboardedAt && (
+        <Onboarding windowDays={rows[0]?.windowDays ?? DEFAULT_WINDOW_DAYS} />
+      )}
+      {locationError && (
+        <s-banner tone="critical" heading="Could not change location">
+          <p>{locationError}</p>
+        </s-banner>
+      )}
+      {data.lastSyncError && (
+        <s-banner tone="critical" heading="Last sync failed">
+          <p role="alert">{data.lastSyncError}</p>
+        </s-banner>
+      )}
+      <s-section
+        heading={
+          data.locationName
+            ? `${data.locationName} · ${data.totalTrackedSkus} tracked SKUs`
+            : "Reorder recommendations"
+        }
+      >
+        {syncing && neverSynced ? (
+          <p>
+            Reading your sales history and stock levels. This may take a minute
+            the first time.
+          </p>
+        ) : rows.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <ReorderTable rows={rows} />
         )}
-
-        <Layout.Section>
-          {syncing && neverSynced ? (
-            <Card>
-              <BlockStack gap="300" inlineAlign="center">
-                <Spinner accessibilityLabel="Loading your sales history" />
-                <Text as="p" variant="bodyMd">
-                  Reading your sales history and stock levels. This takes about a
-                  minute the first time.
-                </Text>
-              </BlockStack>
-            </Card>
-          ) : rows.length === 0 ? (
-            <Card>
-              <EmptyState
-                heading="Nothing needs reordering right now"
-                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-              >
-                <p>
-                  Every tracked SKU has enough stock to cover its lead time.
-                  We check again every morning.
-                </p>
-              </EmptyState>
-            </Card>
-          ) : (
-            <ReorderTable rows={rows} />
-          )}
-        </Layout.Section>
-
-        <Layout.Section>
-          <Text as="p" variant="bodySm" tone="subdued">
-            {data.lastSyncAt
-              ? `Last synced ${new Date(data.lastSyncAt).toLocaleString()}`
-              : "Not synced yet"}
-          </Text>
-        </Layout.Section>
-      </Layout>
-    </Page>
+        <p style={{ color: "#616161", fontSize: 13, marginTop: 20 }}>
+          {data.lastSyncAt
+            ? `Last synced ${new Date(data.lastSyncAt).toLocaleString()}`
+            : "Not synced yet"}
+        </p>
+      </s-section>
+    </s-page>
   );
 }
 
-function OnboardingBanner({ windowDays }: { windowDays: number }) {
-  const fetcher = useFetcher();
+function Onboarding({ windowDays }: { windowDays: number }) {
+  const fetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
+  }, [fetcher.data, fetcher.state, revalidator]);
   return (
-    <Banner
-      title="How these numbers work"
-      onDismiss={() =>
-        fetcher.submit({ intent: "dismissOnboarding" }, { method: "post" })
-      }
-    >
+    <s-section heading="How these numbers work">
       <p>
         We average your last {windowDays} days of sales per SKU, then flag
-        anything whose stock won't cover its lead time plus a safety buffer.
-        Adjust lead time or buffer on any row and the suggestion updates.
+        anything whose stock won&apos;t cover its lead time plus a safety
+        buffer. Adjust lead time or buffer on any row and the suggestion
+        updates.
       </p>
-    </Banner>
+      <s-button
+        onClick={() =>
+          fetcher.submit({ intent: "dismissOnboarding" }, { method: "post" })
+        }
+      >
+        Got it
+      </s-button>
+    </s-section>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div style={{ padding: "28px 0", textAlign: "center" }}>
+      <h2 style={{ marginBottom: 8 }}>Nothing needs reordering right now</h2>
+      <p>
+        Every tracked SKU has enough stock to cover its lead time. We check
+        again every morning.
+      </p>
+    </div>
   );
 }
 
 function ReorderTable({ rows }: { rows: ReorderRow[] }) {
-  const resourceName = { singular: "product", plural: "products" };
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(rows as unknown as Array<{ id: string }>, {
-      resourceIDResolver: (r: any) => r.sku,
-    });
-
   return (
-    <Card padding="0">
-      <IndexTable
-        resourceName={resourceName}
-        itemCount={rows.length}
-        selectedItemsCount={allResourcesSelected ? "All" : selectedResources.length}
-        onSelectionChange={handleSelectionChange}
-        selectable={false}
-        headings={[
-          { title: "Product" },
-          { title: "Stock", alignment: "end" },
-          { title: "Days left", alignment: "end" },
-          { title: "Reorder qty", alignment: "end" },
-          { title: "Lead time (days)" },
-          { title: "Safety buffer" },
-        ]}
+    <div style={{ overflowX: "auto" }}>
+      <table
+        style={{ borderCollapse: "collapse", width: "100%", minWidth: 800 }}
       >
-        {rows.map((row, index) => (
-          <IndexTable.Row id={row.sku} key={row.sku} position={index}>
-            <IndexTable.Cell>
-              <BlockStack gap="050">
-                <Text as="span" variant="bodyMd" fontWeight="semibold">
+        <thead>
+          <tr>
+            {[
+              "Product",
+              "Stock",
+              "Days left",
+              "Reorder qty",
+              "Lead time (days)",
+              "Safety buffer",
+            ].map((heading) => (
+              <th key={heading} style={headerStyle}>
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.sku}>
+              <td style={cellStyle}>
+                <strong>
                   {row.productTitle}
                   {row.variantTitle ? ` · ${row.variantTitle}` : ""}
-                </Text>
-                <Text as="span" variant="bodySm" tone="subdued">
+                </strong>
+                <br />
+                <small>
                   {row.sku} · {row.avgDailySales}/day
-                </Text>
-              </BlockStack>
-            </IndexTable.Cell>
-            <IndexTable.Cell>
-              <Text as="span" numeric alignment="end">
-                {row.currentInventory}
-              </Text>
-            </IndexTable.Cell>
-            <IndexTable.Cell>
-              <InlineStack align="end">
-                <UrgencyBadge days={row.daysOfStockLeft} lead={row.leadTimeDays} />
-              </InlineStack>
-            </IndexTable.Cell>
-            <IndexTable.Cell>
-              <Text as="span" numeric alignment="end" fontWeight="semibold">
-                {row.suggestedOrderQty}
-              </Text>
-            </IndexTable.Cell>
-            <IndexTable.Cell>
-              <InlineNumber
-                sku={row.sku}
-                field="leadTimeDays"
-                value={row.leadTimeDays}
-                isDefault={row.usingDefaultLeadTime}
-              />
-            </IndexTable.Cell>
-            <IndexTable.Cell>
-              <InlineNumber
-                sku={row.sku}
-                field="safetyBufferUnits"
-                value={row.safetyBufferUnits}
-                isDefault={row.usingDefaultSafetyBuffer}
-              />
-            </IndexTable.Cell>
-          </IndexTable.Row>
-        ))}
-      </IndexTable>
-    </Card>
+                </small>
+              </td>
+              <td style={numericCellStyle}>{row.currentInventory}</td>
+              <td style={numericCellStyle}>
+                <UrgencyBadge
+                  days={row.daysOfStockLeft}
+                  lead={row.leadTimeDays}
+                />
+              </td>
+              <td style={numericCellStyle}>
+                <strong>{row.suggestedOrderQty}</strong>
+              </td>
+              <td style={cellStyle}>
+                <InlineNumber
+                  sku={row.sku}
+                  field="leadTimeDays"
+                  value={row.leadTimeDays}
+                  isDefault={row.usingDefaultLeadTime}
+                />
+              </td>
+              <td style={cellStyle}>
+                <InlineNumber
+                  sku={row.sku}
+                  field="safetyBufferUnits"
+                  value={row.safetyBufferUnits}
+                  isDefault={row.usingDefaultSafetyBuffer}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
+/** Days of cover, coloured by how it compares to the lead time. */
 function UrgencyBadge({ days, lead }: { days: number; lead: number }) {
-  if (!Number.isFinite(days)) return <Badge>—</Badge>;
-  const tone = days <= lead / 2 ? "critical" : days <= lead ? "warning" : "attention";
-  return <Badge tone={tone}>{`${days}d`}</Badge>;
+  if (!Number.isFinite(days)) return <span>—</span>;
+  const tone =
+    days <= lead / 2 ? "critical" : days <= lead ? "warning" : "info";
+  return <s-badge tone={tone}>{`${days}d`}</s-badge>;
 }
 
 /** Inline-editable number. Saves on blur; blank resets to the default. */
@@ -304,34 +333,52 @@ function InlineNumber({
   value: number;
   isDefault: boolean;
 }) {
-  const fetcher = useFetcher();
   const [draft, setDraft] = useState(String(value));
-
+  const fetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
   useEffect(() => setDraft(String(value)), [value]);
-
-  const save = () => {
-    if (draft === String(value)) return;
-    fetcher.submit({ intent: "setting", sku, field, value: draft }, { method: "post" });
-  };
-
-  const input = (
-    <TextField
-      label=""
-      labelHidden
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
+  }, [fetcher.data, fetcher.state, revalidator]);
+  return (
+    <input
+      aria-label={
+        field === "leadTimeDays"
+          ? `Lead time for ${sku}`
+          : `Safety buffer for ${sku}`
+      }
+      title={isDefault ? "Default value — type to override" : undefined}
       type="number"
-      min={0}
-      autoComplete="off"
+      min="0"
       value={draft}
-      onChange={setDraft}
-      onBlur={save}
-      // Row click shouldn't navigate away mid-edit.
-      onFocus={(e: any) => e?.stopPropagation?.()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft !== String(value))
+          fetcher.submit(
+            { intent: "setting", sku, field, value: draft },
+            { method: "post" },
+          );
+      }}
+      style={{
+        width: 74,
+        padding: 7,
+        border: isDefault ? "1px dashed #8c9196" : "1px solid #8c9196",
+        borderRadius: 4,
+        color: isDefault ? "#616161" : "inherit",
+      }}
     />
   );
-
-  return isDefault ? (
-    <Tooltip content="Default value — type to override">{input}</Tooltip>
-  ) : (
-    input
-  );
 }
+
+const headerStyle = {
+  borderBottom: "1px solid #d2d5d8",
+  padding: "10px 8px",
+  textAlign: "left" as const,
+  whiteSpace: "nowrap" as const,
+};
+const cellStyle = {
+  borderBottom: "1px solid #e1e3e5",
+  padding: "12px 8px",
+  verticalAlign: "middle" as const,
+};
+const numericCellStyle = { ...cellStyle, textAlign: "right" as const };

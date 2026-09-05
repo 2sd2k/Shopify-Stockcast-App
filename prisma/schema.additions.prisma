@@ -1,8 +1,8 @@
-// Restock Radar — append these models to the prisma/schema.prisma that the
+// Stockcast — append these models to the prisma/schema.prisma that the
 // Shopify CLI template generates (keep its existing `Session` model and
 // datasource/generator blocks untouched), then run:
 //
-//   npx prisma migrate dev --name restock_radar
+//   npx prisma migrate dev --name stockcast
 //
 // SQLite is fine for the MVP. Nothing here uses a Postgres-only feature, so
 // swapping the datasource later is a one-line change.
@@ -19,6 +19,20 @@ model ShopConfig {
   lastSyncError     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+/// Every active location seen at the last sync, so the UI can offer a picker
+/// without calling the Admin API on page load.
+model ShopLocation {
+  id                   Int     @id @default(autoincrement())
+  shop                 String
+  locationId           String
+  name                 String
+  isActive             Boolean @default(true)
+  isFulfillmentService Boolean @default(false)
+
+  @@unique([shop, locationId])
+  @@index([shop])
 }
 
 /// Per-SKU merchant overrides. A null column means "use the computed default",

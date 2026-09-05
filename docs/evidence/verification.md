@@ -17,7 +17,7 @@ Result: PASS
 
 ## GitHub Actions
 
-- Initial CI run: [passed](https://github.com/2sd2k/Shopify-Restock-Radar-App/actions/runs/33923772009)
+- Initial CI run: [passed](https://github.com/2sd2k/Shopify-Stockcast-App/actions/runs/33923772009)
 - Job duration: 17 seconds
 - Checks passed: install, tests, TypeScript, ESLint, and build
 

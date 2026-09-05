@@ -1,5 +1,5 @@
 /**
- * Restock Radar — sync + read model.
+ * Stockcast — sync + read model.
  *
  * syncShop() is the only thing that talks to Shopify. The UI reads
  * getReorderList(), which is pure DB + math, so page loads stay fast and we
@@ -9,9 +9,10 @@
 import db from "../db.server";
 import {
   fetchCurrentInventory,
-  fetchPrimaryLocation,
+  fetchLocations,
   fetchSalesHistory,
 } from "./shopify-data.server";
+import { selectInventoryLocation } from "./location-selection";
 import {
   DEFAULT_WINDOW_DAYS,
   buildReorderList,
@@ -22,7 +23,7 @@ import {
 } from "./reorder";
 import { toSyncErrorMessage } from "./sync-errors";
 
-type AdminClient = Parameters<typeof fetchPrimaryLocation>[0];
+type AdminClient = Parameters<typeof fetchLocations>[0];
 type DbClient = typeof db;
 type CachedVelocityRow = {
   sku: string;
@@ -38,9 +39,14 @@ type ProductSettingRow = {
   leadTimeDays: number | null;
   safetyBufferUnits: number | null;
 };
+type ShopLocationRow = {
+  locationId: string;
+  name: string;
+  isFulfillmentService: boolean;
+};
 type SyncDeps = {
   dbClient: DbClient;
-  fetchPrimaryLocationFn: typeof fetchPrimaryLocation;
+  fetchLocationsFn: typeof fetchLocations;
   fetchSalesHistoryFn: typeof fetchSalesHistory;
   fetchCurrentInventoryFn: typeof fetchCurrentInventory;
   logError: (message: string, error: unknown) => void;
@@ -48,7 +54,7 @@ type SyncDeps = {
 
 const defaultSyncDeps: SyncDeps = {
   dbClient: db,
-  fetchPrimaryLocationFn: fetchPrimaryLocation,
+  fetchLocationsFn: fetchLocations,
   fetchSalesHistoryFn: fetchSalesHistory,
   fetchCurrentInventoryFn: fetchCurrentInventory,
   logError: (message: string, error: unknown) => console.error(message, error),
@@ -62,10 +68,17 @@ export async function getShopConfig(shop: string, dbClient: DbClient = db) {
   });
 }
 
-/** Pull sales + inventory and cache the result. Safe to call repeatedly. */
+/**
+ * Pull sales + inventory and cache the result. Safe to call repeatedly.
+ *
+ * `requestedLocationId` switches the shop to a different inventory location.
+ * When omitted, the previously saved location is kept (or a sensible default
+ * is chosen for a brand-new shop).
+ */
 export async function syncShop(
   admin: AdminClient,
   shop: string,
+  requestedLocationId: string | null = null,
   deps: Partial<SyncDeps> = {},
 ) {
   const merged: SyncDeps = { ...defaultSyncDeps, ...deps };
@@ -73,7 +86,12 @@ export async function syncShop(
   const windowDays = config.windowDays || DEFAULT_WINDOW_DAYS;
 
   try {
-    const location = await merged.fetchPrimaryLocationFn(admin);
+    const snapshot = await merged.fetchLocationsFn(admin);
+    const location = selectInventoryLocation(
+      snapshot,
+      requestedLocationId,
+      config.primaryLocationId,
+    );
     const [sales, inventory] = await Promise.all([
       merged.fetchSalesHistoryFn(admin, windowDays),
       merged.fetchCurrentInventoryFn(admin, location.id),
@@ -97,6 +115,16 @@ export async function syncShop(
       ...(rows.length
         ? [merged.dbClient.cachedVelocity.createMany({ data: rows })]
         : []),
+      merged.dbClient.shopLocation.deleteMany({ where: { shop } }),
+      merged.dbClient.shopLocation.createMany({
+        data: snapshot.locations.map((item) => ({
+          shop,
+          locationId: item.id,
+          name: item.name,
+          isActive: item.isActive,
+          isFulfillmentService: item.isFulfillmentService,
+        })),
+      }),
       merged.dbClient.shopConfig.update({
         where: { shop },
         data: {
@@ -111,7 +139,7 @@ export async function syncShop(
     return { ok: true as const, skuCount: rows.length };
   } catch (error) {
     const message = toSyncErrorMessage(error);
-    merged.logError(`[restock-radar] sync failed for ${shop}:`, message);
+    merged.logError(`[stockcast] sync failed for ${shop}:`, message);
     await merged.dbClient.shopConfig.update({
       where: { shop },
       data: { lastSyncError: message },
@@ -130,15 +158,22 @@ export async function getReorderList(
   lastSyncError: string | null;
   totalTrackedSkus: number;
   onboardedAt: Date | null;
+  locationId: string | null;
   locationName: string | null;
+  locations: Array<{ id: string; name: string; isFulfillmentService: boolean }>;
 }> {
-  const [config, cached, settings] = await Promise.all([
+  const [config, cached, settings, locations] = await Promise.all([
     getShopConfig(shop),
     db.cachedVelocity.findMany({ where: { shop } }),
     db.productSetting.findMany({ where: { shop } }),
+    db.shopLocation.findMany({
+      where: { shop, isActive: true },
+      orderBy: [{ isFulfillmentService: "asc" }, { name: "asc" }],
+    }),
   ]);
   const cachedRows = cached as CachedVelocityRow[];
   const settingRows = settings as ProductSettingRow[];
+  const locationRows = locations as ShopLocationRow[];
 
   const overrides = new Map(settingRows.map((setting) => [setting.sku, setting]));
 
@@ -165,7 +200,13 @@ export async function getReorderList(
     lastSyncError: config.lastSyncError,
     totalTrackedSkus: cachedRows.length,
     onboardedAt: config.onboardedAt,
+    locationId: config.primaryLocationId,
     locationName: config.primaryLocationName,
+    locations: locationRows.map((location) => ({
+      id: location.locationId,
+      name: location.name,
+      isFulfillmentService: location.isFulfillmentService,
+    })),
   };
 }
 
@@ -185,6 +226,7 @@ export async function clearShopData(shop: string) {
   await db.$transaction([
     db.cachedVelocity.deleteMany({ where: { shop } }),
     db.productSetting.deleteMany({ where: { shop } }),
+    db.shopLocation.deleteMany({ where: { shop } }),
     db.shopConfig.deleteMany({ where: { shop } }),
   ]);
 }

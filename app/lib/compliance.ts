@@ -16,12 +16,12 @@ export async function handleComplianceTopic(
   switch (topic as ComplianceTopic) {
     case "CUSTOMERS_DATA_REQUEST":
     case "CUSTOMERS_REDACT":
-      deps.log(`[restock-radar] ${topic} for ${shop}: no customer data held`);
+      deps.log(`[stockcast] ${topic} for ${shop}: no customer data held`);
       return;
 
     case "SHOP_REDACT":
       await deps.clearShopData(shop);
-      deps.log(`[restock-radar] SHOP_REDACT: purged all data for ${shop}`);
+      deps.log(`[stockcast] SHOP_REDACT: purged all data for ${shop}`);
       return;
 
     default:

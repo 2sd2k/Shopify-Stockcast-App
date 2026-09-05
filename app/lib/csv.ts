@@ -47,5 +47,5 @@ export function reorderListToCsv(rows: ReorderRow[]): string {
 
 export function csvFilename(shop: string): string {
   const date = new Date().toISOString().slice(0, 10);
-  return `restock-radar-${shop.replace(/\.myshopify\.com$/, "")}-${date}.csv`;
+  return `stockcast-${shop.replace(/\.myshopify\.com$/, "")}-${date}.csv`;
 }
