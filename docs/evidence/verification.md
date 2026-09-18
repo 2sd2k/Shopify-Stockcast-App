@@ -46,7 +46,11 @@ Stockcast rename and the React Router merge.
   the locations query; the failure was stored in `lastSyncError`, `lastSyncAt`
   and all cached rows were untouched, and the next successful sync cleared the
   error and rewrote the cache)
-- Test uninstall and data deletion via `SHOP_REDACT`: pending manual run
+- Test uninstall and data deletion via `SHOP_REDACT`: **PASS** (2026-09-17;
+  the `app/uninstalled` webhook cleared Session, ShopConfig, ShopLocation,
+  CachedVelocity, and ProductSetting to zero rows; a test `shop/redact`
+  webhook via `shopify app webhook trigger` was accepted by the compliance
+  route with the tables still empty)
 
 ## Suggested evidence artifacts to attach
 
