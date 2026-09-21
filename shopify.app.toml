@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "94ae5fbcc6bfee8593a1770bb44753ce"
-application_url = "https://example.com"
+application_url = "https://stockcast-production-bc92.up.railway.app"
 embedded = true
 name = "Stockcast"
 handle = "stockcast-reorder"
@@ -26,7 +26,7 @@ api_version = "2026-07"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://stockcast-production-bc92.up.railway.app/auth/callback", "https://stockcast-production-bc92.up.railway.app/auth/shopify/callback", "https://stockcast-production-bc92.up.railway.app/api/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = true
