@@ -17,8 +17,8 @@
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
-    "typecheck": "react-router typegen && tsc --noEmit"
-    ,"test": "node --test --experimental-strip-types app/lib/*.test.ts"
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "test": "node --test --experimental-strip-types app/lib/*.test.ts"
   },
   "type": "module",
   "engines": {
@@ -59,6 +59,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "graphql-config": "^5.1.1",
     "prettier": "^3.6.2",
+    "railway": "^3.11.0",
     "typescript": "^5.9.3",
     "vite": "^6.3.6"
   },
