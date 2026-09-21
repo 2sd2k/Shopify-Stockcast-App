@@ -19,7 +19,7 @@ how many units should be purchased for the next cycle.
 - Shopify React Router app template (embedded app shell)
 - TypeScript
 - React Router server routes + Shopify Admin GraphQL
-- Prisma-backed app database
+- Prisma + Postgres app database
 - Shopify Polaris web components for UI
 - `node-cron` for scheduled sync
 - Node `node:test` for tests
@@ -58,54 +58,55 @@ Defaults:
 
 ## Setup instructions
 
-This repository is a feature overlay for a Shopify React Router app scaffold.
-The runnable app is the scaffold with these files copied in.
+This repository is the complete, runnable app. Clone it, install, and run.
 
-1. Scaffold the app and choose the React Router template:
-
-```bash
-npm init @shopify/app@latest
-```
-
-2. Copy this repository's files into the generated app.
-
-3. Merge `shopify.app.toml.snippet` into `shopify.app.toml`, then deploy:
-
-```bash
-shopify app deploy
-```
-
-4. Apply Prisma schema additions and migrate:
-
-```bash
-cat prisma/schema.additions.prisma >> prisma/schema.prisma
-npx prisma migrate dev --name stockcast
-```
-
-5. Install dependencies and run validation:
+1. Install dependencies:
 
 ```bash
 npm install
+```
+
+2. Provide a Postgres database. Any reachable instance works locally; copy
+   `.env.example` to `.env` and set `DATABASE_URL`.
+
+3. Apply the schema:
+
+```bash
+npx prisma migrate deploy
+```
+
+4. Run validation:
+
+```bash
 npm test
 npm run typecheck
 npm run lint
 npm run build
 ```
 
-6. Run local app:
+5. Run the app against your development store (the Shopify CLI fills in the
+   API key, secret, and tunnel URL):
 
 ```bash
 shopify app dev
 ```
 
-## CI
+## Production deployment (Railway)
 
-The workflow in `.github/workflows/ci.yml` runs on every push and PR:
+The app runs as one long-lived Node process so the in-process daily sync can
+fire. It needs a persistent Postgres database.
 
-- `npm test`
-- `npm run typecheck`
-- `npm run lint`
-- `npm run build`
+1. Create a Railway project from this GitHub repository and add a Postgres
+   service. Railway links `DATABASE_URL` automatically.
+2. Set these variables on the app service:
+   - `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET` from the Partner Dashboard
+   - `SHOPIFY_APP_URL` set to the Railway public URL (`https://...`)
+   - `SCOPES=read_orders,read_inventory,read_products,read_locations`
+   - `SUPPORT_EMAIL` for the privacy page
+3. Railway builds the `Dockerfile` and starts with `npm run docker-start`,
+   which runs `prisma migrate deploy` and then serves the built app.
+4. Point `application_url` and `redirect_urls` in `shopify.app.toml` at the
+   Railway URL and run `shopify app deploy` to push the config.
 
 ## Shopify workflow verification
 
