@@ -59,3 +59,24 @@ Stockcast rename and the React Router merge.
 - Inline override update screenshot
 - Exported CSV screenshot
 - Data-deletion proof (no rows remaining for `shop`)
+
+## Production deployment (Railway)
+
+Verified 2026-09-21 to 2026-09-22.
+
+- URL: https://stockcast-production-bc92.up.railway.app
+- Database: Railway Postgres with persistent volume; migration
+  `20260921000000_init_postgres` applied on first deploy
+- Server start: `react-router-serve` on port 3000; daily sync scheduled
+  (`0 4 * * *`)
+- Health: `GET /privacy` returns 200 over the public URL
+- Shopify config: `application_url` and `redirect_urls` point at Railway;
+  released as app version `stockcast-reorder-3`
+
+## Compliance webhooks (production)
+
+- Forged HMAC to `POST /webhooks/compliance`: **401** (rejected)
+- Signed `shop/redact`: **200**, log shows data purge for the test shop
+- Signed `customers/redact`: **200**, acknowledged, no customer data held
+- Signed `customers/data_request`: **200**, acknowledged, no customer data held
+- Signed `app/uninstalled`: **200**, received and handled
