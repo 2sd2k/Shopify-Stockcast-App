@@ -108,6 +108,22 @@ fire. It needs a persistent Postgres database.
 4. Point `application_url` and `redirect_urls` in `shopify.app.toml` at the
    Railway URL and run `shopify app deploy` to push the config.
 
+### One app, two environments
+
+`shopify.app.toml` sets `automatically_update_urls_on_dev = true`, so every
+`shopify app dev` session rewrites the app's registered URL to that session's
+temporary tunnel. The tunnel dies when the session ends, and the embedded app
+in Shopify Admin then loads a dead address and renders blank.
+
+After any local dev session, restore the production URLs:
+
+```bash
+shopify app deploy --allow-updates
+```
+
+The long-term fix is a second Shopify app used only for development, so the
+production app is never touched by `shopify app dev`.
+
 ## Shopify workflow verification
 
 Run this sequence on a development store:
