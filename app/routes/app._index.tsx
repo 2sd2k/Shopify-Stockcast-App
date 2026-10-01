@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { csvFilename, reorderListToCsv } from "../lib/csv";
@@ -66,7 +66,6 @@ export default function Stockcast() {
   const data = useLoaderData<typeof loader>();
   const syncFetcher = useFetcher<typeof action>();
   const locationFetcher = useFetcher<typeof action>();
-  const revalidator = useRevalidator();
   const rows = data.rows as ReorderRow[];
   const neverSynced = !data.lastSyncAt;
   const syncing = syncFetcher.state !== "idle";
@@ -76,19 +75,16 @@ export default function Stockcast() {
       ? locationFetcher.data.error
       : null;
 
+  // React Router revalidates every loader on the page automatically once a
+  // fetcher's action finishes, so this screen must not call revalidate()
+  // itself: doing so re-triggers on the revalidator's own state change and
+  // loops the loader forever.
+  //
   // First load after install: kick off the initial sync automatically.
   useEffect(() => {
     if (neverSynced && syncFetcher.state === "idle" && !syncFetcher.data)
       syncFetcher.submit({ intent: "sync" }, { method: "post" });
   }, [neverSynced, syncFetcher]);
-  useEffect(() => {
-    if (syncFetcher.state === "idle" && syncFetcher.data)
-      revalidator.revalidate();
-  }, [revalidator, syncFetcher.data, syncFetcher.state]);
-  useEffect(() => {
-    if (locationFetcher.state === "idle" && locationFetcher.data)
-      revalidator.revalidate();
-  }, [locationFetcher.data, locationFetcher.state, revalidator]);
 
   const csv = useMemo(() => reorderListToCsv(rows), [rows]);
   const downloadCsv = () => {
@@ -214,10 +210,6 @@ export default function Stockcast() {
 
 function Onboarding({ windowDays }: { windowDays: number }) {
   const fetcher = useFetcher<typeof action>();
-  const revalidator = useRevalidator();
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
-  }, [fetcher.data, fetcher.state, revalidator]);
   return (
     <s-section heading="How these numbers work">
       <p>
@@ -356,11 +348,7 @@ function InlineNumber({
 }) {
   const [draft, setDraft] = useState(String(value));
   const fetcher = useFetcher<typeof action>();
-  const revalidator = useRevalidator();
   useEffect(() => setDraft(String(value)), [value]);
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
-  }, [fetcher.data, fetcher.state, revalidator]);
   return (
     <input
       aria-label={
