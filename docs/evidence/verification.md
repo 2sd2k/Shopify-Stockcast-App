@@ -80,3 +80,14 @@ Verified 2026-09-21 to 2026-09-22.
 - Signed `customers/redact`: **200**, acknowledged, no customer data held
 - Signed `customers/data_request`: **200**, acknowledged, no customer data held
 - Signed `app/uninstalled`: **200**, received and handled
+
+## Production app behaviour (2026-10-03)
+
+- Install on the development store from the production URL succeeds and the
+  reorder table renders real data.
+- Scheduled daily sync runs unattended in production and reports
+  `{ ok: true, skuCount: 7 }`.
+- Loader traffic is correct after the revalidation fix: an idle page makes no
+  requests for 90 seconds, and one "Update from Shopify" click produces one
+  POST plus a single follow-up GET. Before the fix a single click produced
+  dozens of repeated loader requests.
