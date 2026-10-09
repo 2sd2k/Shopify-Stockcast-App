@@ -17,9 +17,9 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <nav aria-label="App navigation">
-        <a href="/app">Home</a>
-      </nav>
+      <s-app-nav>
+        <s-link href="/app">Home</s-link>
+      </s-app-nav>
       <Outlet />
     </AppProvider>
   );
