@@ -348,7 +348,8 @@ function InlineNumber({
 }) {
   const [draft, setDraft] = useState(String(value));
   const fetcher = useFetcher<typeof action>();
-  useEffect(() => setDraft(String(value)), [value]);
+  // isDefault too: clearing a custom value equal to the default leaves value unchanged.
+  useEffect(() => setDraft(String(value)), [value, isDefault]);
   return (
     <input
       aria-label={
@@ -366,6 +367,10 @@ function InlineNumber({
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
+        if (draft.trim() === "" && isDefault) {
+          setDraft(String(value));
+          return;
+        }
         if (draft !== String(value))
           fetcher.submit(
             { intent: "setting", sku, field, value: draft },
